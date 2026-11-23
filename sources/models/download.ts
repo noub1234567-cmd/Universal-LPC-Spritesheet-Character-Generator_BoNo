@@ -1,3 +1,4 @@
+import { Clipboard } from "@capacitor/clipboard";
 import { downloadAsPNG, downloadFile } from "../canvas/download.ts";
 import { drawCalls } from "../canvas/renderer.ts";
 import type { CatalogReader } from "../state/catalog.ts";
@@ -86,7 +87,7 @@ export const downloadModelFactory = {
             serializeLayersForJson(drawCalls),
           );
           debugLog(json);
-          await navigator.clipboard.writeText(json);
+          await Clipboard.write({ string: json });
           return { kind: "success" };
         } catch (error) {
           return { kind: "failure", error };
@@ -95,7 +96,8 @@ export const downloadModelFactory = {
       async importJsonFromClipboard() {
         if (!window.canvasRenderer) return { kind: "unavailable" };
         try {
-          const json = await navigator.clipboard.readText();
+          const { value: json } = await Clipboard.read();
+          if (!json.trim()) throw new Error("Clipboard is empty");
           debugLog(json);
           Object.assign(state, importStateFromJSON(catalog, state, json));
           return { kind: "success" };
