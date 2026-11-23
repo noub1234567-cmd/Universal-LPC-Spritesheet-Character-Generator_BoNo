@@ -49,7 +49,7 @@ jobs:
         run: npm ci
 
       - name: Install Capacitor 8 and native export plugins
-        run: npm install --save-exact "@capacitor/core@^8" "@capacitor/cli@^8" "@capacitor/android@^8" "@capacitor/filesystem@^8" "@capacitor/share@^8"
+        run: npm install --save-exact "@capacitor/core@^8" "@capacitor/cli@^8" "@capacitor/android@^8" "@capacitor/filesystem@^8" "@capacitor/share@^8" "@capacitor/clipboard@^8"
 
       - name: Type-check and run Node tests
         run: |
