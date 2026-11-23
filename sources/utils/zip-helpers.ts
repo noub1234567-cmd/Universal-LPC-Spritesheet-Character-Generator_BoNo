@@ -20,6 +20,7 @@ import {
   hasContentInRegion,
 } from "../canvas/canvas-utils.ts";
 import { debugLog, debugWarn } from "../utils/debug.ts";
+import { saveExportBlob } from "./save-export.ts";
 import { getAllCredits, creditsToTxt, creditsToCsv } from "./credits.ts";
 import { exportStateAsJSON, serializeLayersForJson } from "../state/json.ts";
 import type { ZipExportProfiler } from "../performance-profiler.ts";
@@ -629,11 +630,6 @@ export async function zipGenerateBlobWithProfiler(
   return zipBlob as Blob;
 }
 
-export function downloadZipBlob(zipBlob: Blob, filename: string): void {
-  const url = URL.createObjectURL(zipBlob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+export async function downloadZipBlob(zipBlob: Blob, filename: string): Promise<void> {
+  await saveExportBlob(zipBlob, filename);
 }
