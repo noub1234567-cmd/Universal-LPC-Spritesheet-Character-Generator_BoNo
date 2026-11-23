@@ -1,0 +1,66 @@
+name: Import original project source
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: import-original-source
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download and verify release archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://github.com/noub1234567-cmd/Universal-LPC-Spritesheet-Character-Generator_BoNo/releases/download/v1.0/Universal-LPC-Spritesheet-Character-Generator-master.zip"
+          curl --fail --location --retry 3 --output /tmp/project.zip "$URL"
+          unzip -tq /tmp/project.zip
+          mkdir -p /tmp/project
+          unzip -q /tmp/project.zip -d /tmp/project
+          ROOT="$(find /tmp/project -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          if [ -z "$ROOT" ]; then
+            echo "::error::Could not find the project root folder in the archive."
+            exit 1
+          fi
+          echo "SOURCE_ROOT=$ROOT" >> "$GITHUB_ENV"
+          echo "Archive verified. Top-level folder: $ROOT"
+
+      - name: Inspect source and GitHub file limits
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Files found: $(find "$SOURCE_ROOT" -type f | wc -l)"
+          du -sh "$SOURCE_ROOT"
+          LARGE="$(find "$SOURCE_ROOT" -type f -size +100M -print)"
+          if [ -n "$LARGE" ]; then
+            echo "::error::GitHub rejects regular Git files larger than 100 MB:"
+            echo "$LARGE"
+            exit 1
+          fi
+
+      - name: Import files and push to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          rsync -a --exclude='.git' "$SOURCE_ROOT"/ "$GITHUB_WORKSPACE"/
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to import."
+            exit 0
+          fi
+          git commit -m "Import original Universal LPC project source"
+          git push origin HEAD:main
