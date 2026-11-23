@@ -1,37 +1,18 @@
+import JSZip from "jszip";
 import { debugWarn } from "../utils/debug.ts";
 
 let loadedImages: Record<string, HTMLImageElement> = {};
 /** In-flight loads: same `src` shares one `Image` and one profiler span. */
 const inFlight = new Map<string, Promise<HTMLImageElement>>();
 
-export type ImageLoadStats = {
-  cacheHits: number;
-  loads: number;
-};
-
+export type ImageLoadStats = { cacheHits: number; loads: number };
 let imageLoadStats: ImageLoadStats = { cacheHits: 0, loads: 0 };
 
-/** Snapshot of always-on `loadImage` cache / network counters. */
-export function getImageLoadStats(): ImageLoadStats {
-  return { ...imageLoadStats };
-}
-
-/** Reset cache / network counters. Also called from {@link resetImageLoadCache}. */
-export function resetImageLoadStats(): void {
-  imageLoadStats = { cacheHits: 0, loads: 0 };
-}
-
 type LoadImageFn = (src: string) => Promise<HTMLImageElement>;
-
-/** When set, {@link loadImage} (and {@link loadImagesInParallel}) use this instead of `new Image()`. */
 let loadImageForTests: LoadImageFn | null = null;
 
-/** Browser specs inject synthetic sprites. `null` restores the real loader. */
-export function setLoadImageForTests(fn: LoadImageFn | null): void {
-  loadImageForTests = fn;
-}
-
-/** Profiler is attached to `window.profiler` by `main.ts`; absent in tests / Node. */
+type NativeBridge = { isNativePlatform?: () => boolean };
+type WindowWithNativeBridge = Window & { Capacitor?: NativeBridge };
 type WindowWithProfiler = Window & {
   profiler?: {
     mark: (name: string) => void;
@@ -39,55 +20,131 @@ type WindowWithProfiler = Window & {
   };
 };
 
+type SpriteArchiveIndex = { files: Record<string, string> };
+let spriteIndexPromise: Promise<SpriteArchiveIndex> | null = null;
+const spriteZipCache = new Map<string, Promise<JSZip>>();
+const MAX_CACHED_SPRITE_ARCHIVES = 2;
+
+export function getImageLoadStats(): ImageLoadStats {
+  return { ...imageLoadStats };
+}
+export function resetImageLoadStats(): void {
+  imageLoadStats = { cacheHits: 0, loads: 0 };
+}
+export function setLoadImageForTests(fn: LoadImageFn | null): void {
+  loadImageForTests = fn;
+}
+
+function isNativeAndroid(): boolean {
+  try {
+    return (
+      (window as WindowWithNativeBridge).Capacitor?.isNativePlatform?.() === true
+    );
+  } catch {
+    return false;
+  }
+}
+
+function getSpriteIndex(): Promise<SpriteArchiveIndex> {
+  if (!spriteIndexPromise) {
+    spriteIndexPromise = fetch("sprite-archives/index.json")
+      .then((response) => {
+        if (!response.ok) throw new Error(`Sprite index HTTP ${response.status}`);
+        return response.json() as Promise<SpriteArchiveIndex>;
+      })
+      .catch((error: unknown) => {
+        spriteIndexPromise = null;
+        throw error;
+      });
+  }
+  return spriteIndexPromise;
+}
+
+function getSpriteArchive(name: string): Promise<JSZip> {
+  const existing = spriteZipCache.get(name);
+  if (existing) {
+    // Refresh insertion order for a small LRU cache.
+    spriteZipCache.delete(name);
+    spriteZipCache.set(name, existing);
+    return existing;
+  }
+
+  const pending = fetch(`sprite-archives/${name}`)
+    .then((response) => {
+      if (!response.ok) throw new Error(`Sprite archive HTTP ${response.status}: ${name}`);
+      return response.arrayBuffer();
+    })
+    .then((bytes) => JSZip.loadAsync(bytes));
+
+  spriteZipCache.set(name, pending);
+  while (spriteZipCache.size > MAX_CACHED_SPRITE_ARCHIVES) {
+    const oldest = spriteZipCache.keys().next().value;
+    if (oldest) spriteZipCache.delete(oldest);
+  }
+  pending.catch(() => {
+    if (spriteZipCache.get(name) === pending) spriteZipCache.delete(name);
+  });
+  return pending;
+}
+
+/** Resolve a sprite from a sharded archive on Android; keep ordinary URLs on web. */
+async function resolveSpriteSource(src: string): Promise<{ url: string; revoke: boolean }> {
+  if (!isNativeAndroid() || !src.startsWith("spritesheets/")) {
+    return { url: src, revoke: false };
+  }
+
+  const relativePath = src.slice("spritesheets/".length);
+  const index = await getSpriteIndex();
+  const archiveName = index.files[relativePath];
+  if (!archiveName) throw new Error(`Sprite not found in archive index: ${relativePath}`);
+
+  const zip = await getSpriteArchive(archiveName);
+  const entry = zip.file(relativePath);
+  if (!entry) throw new Error(`Sprite missing from archive ${archiveName}: ${relativePath}`);
+
+  const blob = await entry.async("blob");
+  return { url: URL.createObjectURL(blob), revoke: true };
+}
+
 /**
- * Clears the in-memory image cache. Browser tests call this so a stubbed
- * `Image` constructor cannot poison later specs that share the same module.
+ * Clears in-memory images and archive lookup state. Browser tests call this
+ * so injected Image constructors and archive fetches cannot leak between specs.
  */
 export function resetImageLoadCache(): void {
   loadedImages = {};
   inFlight.clear();
+  spriteIndexPromise = null;
+  spriteZipCache.clear();
   resetImageLoadStats();
   loadImageForTests = null;
 }
 
 /** Load an image. Rejects with `Error("Failed to load <src>")` on error. */
 export function loadImage(src: string): Promise<HTMLImageElement> {
-  if (loadImageForTests) {
-    return loadImageForTests(src);
-  }
+  if (loadImageForTests) return loadImageForTests(src);
   if (loadedImages[src]) {
     imageLoadStats.cacheHits++;
     return Promise.resolve(loadedImages[src]);
   }
   const existing = inFlight.get(src);
-  if (existing) {
-    return existing;
-  }
+  if (existing) return existing;
   imageLoadStats.loads++;
 
-  // Register in-flight *before* creating the Image. The Promise constructor runs
-  // the executor synchronously; if we only `set` after `new Promise(...)`, a
-  // second concurrent `loadImage(src)` can miss `inFlight` and create a second
-  // `Image` for the same `src` (fails "share one in-flight request" in tests).
   let resolve!: (img: HTMLImageElement) => void;
   let reject!: (err: Error) => void;
-  const p = new Promise<HTMLImageElement>((res, rej) => {
+  const promise = new Promise<HTMLImageElement>((res, rej) => {
     resolve = res;
     reject = rej;
   });
-  inFlight.set(src, p);
+  inFlight.set(src, promise);
 
-  // Mark start of image load (span is actual fetch/decode)
   const profiler = (window as WindowWithProfiler).profiler;
-  if (profiler) {
-    profiler.mark(`image-load:${src}:start`);
-  }
+  if (profiler) profiler.mark(`image-load:${src}:start`);
 
   const img = new Image();
   img.onload = () => {
     loadedImages[src] = img;
     inFlight.delete(src);
-
     if (profiler) {
       profiler.mark(`image-load:${src}:end`);
       profiler.measure(
@@ -96,7 +153,6 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
         `image-load:${src}:end`,
       );
     }
-
     resolve(img);
   };
   img.onerror = () => {
@@ -104,18 +160,39 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
     console.error(`Failed to load image: ${src}`);
     reject(new Error(`Failed to load ${src}`));
   };
-  img.src = src;
 
-  return p;
+  void resolveSpriteSource(src)
+    .then(({ url, revoke }) => {
+      img.onload = () => {
+        if (revoke) URL.revokeObjectURL(url);
+        loadedImages[src] = img;
+        inFlight.delete(src);
+        if (profiler) {
+          profiler.mark(`image-load:${src}:end`);
+          profiler.measure(`image-load:${src}`, `image-load:${src}:start`, `image-load:${src}:end`);
+        }
+        resolve(img);
+      };
+      img.onerror = () => {
+        if (revoke) URL.revokeObjectURL(url);
+        inFlight.delete(src);
+        console.error(`Failed to load image: ${src}`);
+        reject(new Error(`Failed to load ${src}`));
+      };
+      img.src = url;
+    })
+    .catch((error: unknown) => {
+      inFlight.delete(src);
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to load image: ${src}`, message);
+      reject(new Error(`Failed to load ${src}: ${message}`));
+    });
+
+  return promise;
 }
 
-export type LoadedImage<T> = {
-  item: T;
-  img: HTMLImageElement | null;
-  success: boolean;
-};
+export type LoadedImage<T> = { item: T; img: HTMLImageElement | null; success: boolean };
 
-/** Load multiple images in parallel, swallowing per-image errors. */
 export async function loadImagesInParallel<T>(
   items: T[],
   getPath: (item: T) => string = (item) =>
@@ -129,6 +206,5 @@ export async function loadImagesInParallel<T>(
         return { item, img: null, success: false };
       }),
   );
-
   return Promise.all(promises);
 }
