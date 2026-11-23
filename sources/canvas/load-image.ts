@@ -93,7 +93,9 @@ function getSpriteArchive(name: string): Promise<JSZip> {
  * left untouched so web loading and non-sprite assets retain their old path.
  */
 export function getSpriteArchiveRelativePath(src: string): string | null {
-  const normalized = src.replace(/^(?:\\.\\/|\\/)+/, "");
+  let normalized = src;
+  while (normalized.startsWith("./")) normalized = normalized.slice(2);
+  while (normalized.startsWith("/")) normalized = normalized.slice(1);
   if (!normalized.startsWith("spritesheets/")) return null;
   return normalized.slice("spritesheets/".length);
 }
