@@ -1,0 +1,73 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [android-capacitor]
+    paths:
+      - "sources/**"
+      - "spritesheets/**"
+      - "sheet_definitions/**"
+      - "palette_definitions/**"
+      - "scripts/**"
+      - "vite/**"
+      - "index.html"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.ts"
+      - "capacitor.config.json"
+      - ".github/workflows/build-android.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install locked project dependencies
+        run: npm ci
+
+      - name: Install Capacitor 8 build tooling
+        run: npm install --no-save --no-package-lock "@capacitor/core@^8" "@capacitor/cli@^8" "@capacitor/android@^8"
+
+      - name: Build original web application
+        run: npm run build
+
+      - name: Generate Android project
+        run: npx cap add android
+
+      - name: Copy web app into Android project
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: universal-lpc-generator-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
