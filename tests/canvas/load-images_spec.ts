@@ -5,10 +5,28 @@ import {
   loadImagesInParallel,
   getImageLoadStats,
   resetImageLoadCache,
+  getSpriteArchiveRelativePath,
 } from "../../sources/canvas/load-image.ts";
 
 describe("canvas/load-image.ts", function () {
   this.timeout(10_000);
+
+  describe("getSpriteArchiveRelativePath", () => {
+    it("accepts sprite paths with or without a leading slash", () => {
+      expect(getSpriteArchiveRelativePath("/spritesheets/arms/body/idle.png"))
+        .to.equal("arms/body/idle.png");
+      expect(getSpriteArchiveRelativePath("spritesheets/arms/body/idle.png"))
+        .to.equal("arms/body/idle.png");
+      expect(getSpriteArchiveRelativePath("./spritesheets/arms/body/idle.png"))
+        .to.equal("arms/body/idle.png");
+    });
+
+    it("does not rewrite non-sprite assets or external URLs", () => {
+      expect(getSpriteArchiveRelativePath("/assets/app.js")).to.equal(null);
+      expect(getSpriteArchiveRelativePath("https://example.com/sprite.png"))
+        .to.equal(null);
+    });
+  });
 
   describe("loadImage", () => {
     it("should load an image successfully", async () => {
