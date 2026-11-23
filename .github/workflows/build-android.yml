@@ -48,13 +48,13 @@ jobs:
       - name: Install locked project dependencies
         run: npm ci
 
+      - name: Install Capacitor 8 and native export plugins
+        run: npm install --no-save --no-package-lock "@capacitor/core@^8" "@capacitor/cli@^8" "@capacitor/android@^8" "@capacitor/filesystem@^8" "@capacitor/share@^8"
+
       - name: Type-check and run Node tests
         run: |
           npm run type-check
           npm run test:node
-
-      - name: Install Capacitor 8 build tooling
-        run: npm install --no-save --no-package-lock "@capacitor/core@^8" "@capacitor/cli@^8" "@capacitor/android@^8"
 
       - name: Build original web application
         run: npm run build
