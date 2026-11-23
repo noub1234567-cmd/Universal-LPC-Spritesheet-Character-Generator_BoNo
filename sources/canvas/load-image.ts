@@ -87,13 +87,23 @@ function getSpriteArchive(name: string): Promise<JSZip> {
   return pending;
 }
 
+/**
+ * Return the path relative to the spritesheets directory for either URL form
+ * used by the app ("/spritesheets/..." or "spritesheets/..."). Other URLs are
+ * left untouched so web loading and non-sprite assets retain their old path.
+ */
+export function getSpriteArchiveRelativePath(src: string): string | null {
+  const normalized = src.replace(/^(?:\\.\\/|\\/)+/, "");
+  if (!normalized.startsWith("spritesheets/")) return null;
+  return normalized.slice("spritesheets/".length);
+}
+
 /** Resolve a sprite from a sharded archive on Android; keep ordinary URLs on web. */
 async function resolveSpriteSource(src: string): Promise<{ url: string; revoke: boolean }> {
-  if (!isNativeAndroid() || !src.startsWith("spritesheets/")) {
+  const relativePath = getSpriteArchiveRelativePath(src);
+  if (!isNativeAndroid() || relativePath === null) {
     return { url: src, revoke: false };
   }
-
-  const relativePath = src.slice("spritesheets/".length);
   const index = await getSpriteIndex();
   const archiveName = index.files[relativePath];
   if (!archiveName) throw new Error(`Sprite not found in archive index: ${relativePath}`);
