@@ -48,6 +48,11 @@ jobs:
       - name: Install locked project dependencies
         run: npm ci
 
+      - name: Type-check and run Node tests
+        run: |
+          npm run type-check
+          npm run test:node
+
       - name: Install Capacitor 8 build tooling
         run: npm install --no-save --no-package-lock "@capacitor/core@^8" "@capacitor/cli@^8" "@capacitor/android@^8"
 
@@ -56,6 +61,9 @@ jobs:
 
       - name: Pack spritesheets into Android-safe ZIP shards
         run: python3 scripts/pack-spritesheets-android.py
+
+      - name: Validate sprite archive index and ZIP contents
+        run: python3 scripts/validate-sprite-archives.py
 
       - name: Generate Android project
         run: npx cap add android
