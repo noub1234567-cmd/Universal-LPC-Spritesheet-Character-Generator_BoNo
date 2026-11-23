@@ -54,7 +54,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rsync -a --exclude='.git' "$SOURCE_ROOT"/ "$GITHUB_WORKSPACE"/
+          # The source archive contains its own GitHub Actions workflow files.
+          # Skip them here because this connection's token lacks the 'workflows' permission.
+          # We will review and add any needed project workflows separately.
+          rsync -a --exclude='.git' --exclude='.github/workflows/**' "$SOURCE_ROOT"/ "$GITHUB_WORKSPACE"/
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
