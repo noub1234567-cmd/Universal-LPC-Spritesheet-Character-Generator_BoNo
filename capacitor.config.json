@@ -1,0 +1,6 @@
+{
+  "appId": "com.bounou.lpcgenerator",
+  "appName": "Universal LPC Generator",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}
