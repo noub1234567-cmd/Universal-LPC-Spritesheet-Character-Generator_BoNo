@@ -195,7 +195,7 @@ export const exportSplitAnimations = async (
     creditsFolder.file("metadata.json", JSON.stringify(metadata, null, 2));
 
     const zipBlob = await zipGenerateBlobWithProfiler(profiler, zip);
-    downloadZipBlob(zipBlob, `lpc_${bodyType}_animations_${timestamp}.zip`);
+    await downloadZipBlob(zipBlob, `lpc_${bodyType}_animations_${timestamp}.zip`);
 
     if (failedStandard.length > 0 || failedCustom.length > 0) {
       alert(
@@ -307,7 +307,7 @@ export const exportSplitItemSheets = async (
     });
 
     const zipBlob = await zipGenerateBlobWithProfiler(profiler, zip);
-    downloadZipBlob(
+    await downloadZipBlob(
       zipBlob,
       `lpc_${bodyType}_item_spritesheets_${timestamp}.zip`,
     );
@@ -595,7 +595,7 @@ export const exportSplitItemAnimations = async (
     creditsFolder.file("metadata.json", JSON.stringify(metadata, null, 2));
 
     const zipBlob = await zipGenerateBlobWithProfiler(profiler, zip);
-    downloadZipBlob(
+    await downloadZipBlob(
       zipBlob,
       `lpc_${bodyType}_item_animations_${timestamp}.zip`,
     );
@@ -905,7 +905,7 @@ export const exportIndividualFrames = async (
 
     debugLog("Generating ZIP file...");
     const zipBlob = await zipGenerateBlobWithProfiler(profiler, zip);
-    downloadZipBlob(
+    await downloadZipBlob(
       zipBlob,
       `lpc_${bodyType}_individual_frames_${timestamp}.zip`,
     );
